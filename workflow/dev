@@ -1,0 +1,88 @@
+---
+name: Publish ParentPom - dev
+on:
+  workflow_dispatch: null
+permissions:
+  id-token: write
+  contents: read
+run-name: Deploy Parent Pom
+jobs:
+  verify-permissions:
+    name: Verify Permissions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get team members
+        id: members
+        env:
+          GITHUB_TOKEN: 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
+        run: ""
+      - name: Print team members
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: verify-permissions
+    env:
+      XREFKEY: ${{ inputs.xref }}
+      ENV: dev
+      JAVA_VERSION: 1.8.0_202
+      MAVEN_VERSION: 3.9.4
+      JAVA_DISTRIBUTION: temurin
+      CACHE_PATH: ~/.m2/repository
+    steps:
+      - name: Checkout mulesoft-deployment-actions
+        uses: actions/checkout@v2
+      - name: Checkout Parent Pom Repository
+        uses: actions/checkout@v2
+        with:
+          repository: Rishi-sana/parent-pom
+          ref: dev
+          token: ${{ secrets.PARENTPOM_PAT }}
+          path: parent-pom
+      - name: Maven Deploy Parent Pom To Exchange
+        working-directory: parentpom
+        run: |+
+          mvn -q -s ./.github/maven/MyGlobalSettings.xml clean deploy 
+                    
+      - name: Rename Pom File
+        run: mv parent-pom/pom.xml parentpom/'pom-${{github.run_number}}.xml'
+      - name: Copy Files To pombackupversions
+        uses: dmnemec/copy_file_to_another_repo_action@main
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.PARENTPOM_PAT }}
+        with:
+          source_file: parentpom/pom-${{github.run_number}}.xml
+          destination_repo: Rishi-sana/parent-pom
+          destination_branch: dev
+          destination_folder: pombackupversions
+          user_email: ${{github.actor.id}}+${{github.actor}}@users.noreply.github.com
+          user_name: ${{github.actor}}
+          commit_message: BackingUp Pom File
+      - name: Convert XML file to JSON
+        uses: fabasoad/yaml-json-xml-converter-action@main
+        id: yaml2xml
+        with:
+          path: parent-pom/pom-${{github.run_number}}.xml
+          from: xml
+          to: json
+          run: echo "${{ steps.yaml2xml.outputs.data }}"
+      - name: Print yaml2xml result
+        run: echo "${{ steps.yaml2xml.outputs.data }}"
+      - name: overwrire Json File
+        uses: DamianReeves/write-file-action@master
+        with:
+          path: parent-pom/PomVersions.json
+          contents: |
+            data=${{ steps.yaml2xml.outputs.data }}
+          write-mode: overwrite
+      - name: Copy Converted Pom Json File To pombackupversions
+        uses: dmnemec/copy_file_to_another_repo_action@main
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.PARENTPOM_PAT }}
+        with:
+          source_file: parent-pom/PomVersions.json
+          destination_repo: Rishi-sana/parent-pom
+          destination_branch: dev
+          destination_folder: pombackupversions
+          user_email: ${{github.actor.id}}+${{github.actor}}@users.noreply.github.com
+          user_name: ${{github.actor}}
+          commit_message: BackingUp Pom File
